@@ -29,17 +29,16 @@ class GameEngine:
                 self.reset()
             return
 
+        # Task 1 Fix: Alternating Input Deadlock Bug
+        # Decouple pull registration from KEYUP lockout so rapid and overlapping
+        # key presses (A and D) alternate smoothly without freezing.
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_a, pygame.K_d):
-                if not self.is_pull_locked:
-                    if event.key != self.last_key:
-                        self.rope.pull_left(1.0)
-                        self.last_key = event.key
-                        self.is_pull_locked = True
-        elif event.type == pygame.KEYUP:
-            if event.key == self.last_key:
-                self.is_pull_locked = False
-        
+                if event.key != self.last_key:
+                    self.rope.pull_left(1.0)
+                    self.last_key = event.key
+                    self.is_pull_locked = False
+
     def update(self):
         if self.game_state != "PLAYING":
             return
