@@ -35,12 +35,17 @@ class GameEngine:
             return
 
         # Task 1 Fix: Alternating Input Deadlock Bug
+        # Decouple pull registration from KEYUP lockout so rapid and overlapping
+        # key presses (A and D) alternate smoothly without freezing.
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_a, pygame.K_d):
                 if event.key != self.last_key:
                     self.rope.pull_left(1.0)
                     self.last_key = event.key
                     self.is_pull_locked = False
+                    # Task 3: Backward leaning animation & struggle intensity
+                    self.player.apply_pull_impulse(1.0)
+                    self.computer.apply_dragged_impulse()
 
     def update(self):
         if self.game_state != "PLAYING":
@@ -48,19 +53,21 @@ class GameEngine:
 
         now = pygame.time.get_ticks()
 
+        # Task 3: Update physics & animation states
+        self.rope.update()
+        self.player.update()
+        self.computer.update()
+
         # Task 2: Implement Dynamic AI Panic Surges
-        # Calculate how close the player is to winning (left_win_x is player win threshold)
         center_x = self.width / 2.0
         left_threshold = float(self.rope.left_win_x)
         if self.rope.marker_x < center_x:
-            # Threat level rises from 0.0 at center to 1.0 at winning boundary
             self.panic_level = max(0.0, min(1.0, (center_x - self.rope.marker_x) / (center_x - left_threshold)))
         else:
             self.panic_level = 0.0
 
         if self.panic_level > 0.15:
             self.is_panic_surge = True
-            # Cadence ramps up: cooldown drops from 180ms down to ~65ms
             self.computer_pull_cooldown = max(65, int(self.base_computer_cooldown - (self.panic_level * 115)))
         else:
             self.is_panic_surge = False
@@ -68,13 +75,14 @@ class GameEngine:
 
         if now - self.last_computer_pull >= self.computer_pull_cooldown:
             if self.is_panic_surge:
-                # Dynamic aggressive strength surge staged for comeback
                 surge_boost = self.panic_level * 1.2
                 computer_variance = random.uniform(1.0 + surge_boost, 1.5 + surge_boost)
             else:
                 computer_variance = random.uniform(0.7, 1.2)
 
             self.rope.pull_right(computer_variance)
+            self.computer.apply_pull_impulse(computer_variance)
+            self.player.apply_dragged_impulse()
             self.last_computer_pull = now
 
         result = self.rope.check_winner()
@@ -84,6 +92,10 @@ class GameEngine:
 
     def reset(self):
         self.rope.reset()
+        self.player.lean_angle = 0.0
+        self.player.target_lean = 0.0
+        self.computer.lean_angle = 0.0
+        self.computer.target_lean = 0.0
         self.last_key = None
         self.is_pull_locked = False
         self.winner = None
@@ -110,8 +122,6 @@ class GameEngine:
 
         # Visual indicator for Dynamic AI Panic Surge
         if self.is_panic_surge and self.game_state == "PLAYING":
-            ticks = pygame.time.get_ticks()
-            pulse = int(127 + 127 * (random.random() * 0.4 + 0.6))
             surge_color = (255, max(50, int(180 - self.panic_level * 130)), 30)
             surge_text = f"! AI PANIC SURGE ! Cadence: {self.computer_pull_cooldown}ms (+{int(self.panic_level*100)}% Danger)"
             surge_surf = self.font_small.render(surge_text, True, surge_color)
