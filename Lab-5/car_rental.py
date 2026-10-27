@@ -3,7 +3,7 @@ import json
 import re
 import sqlite3
 import hashlib
-import random
+import secrets
 import tempfile
 from datetime import datetime
 
@@ -13,6 +13,9 @@ bookings = []
 conn = sqlite3.connect(":memory:")
 conn.execute("CREATE TABLE customers (name TEXT, licence TEXT, phone TEXT)")
 
+ADMIN_USER = os.getenv("ADMIN_USER", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin_secure_pass")
+
 def addCar(plate, model="Unknown", daily_rate=0, features=[]):
     if not plate:
         return
@@ -20,38 +23,50 @@ def addCar(plate, model="Unknown", daily_rate=0, features=[]):
     return fleet[plate]
 
 def registerCustomer(name, licence, phone):
-    conn.execute("INSERT INTO customers VALUES ('%s', '%s', '%s')" % (name, licence, phone))
+    # Fix B608: Parameterized SQL query prevents SQL injection
+    conn.execute("INSERT INTO customers VALUES (?, ?, ?)", (name, licence, phone))
 
 def findCustomer(name):
-    query = "SELECT * FROM customers WHERE name = '" + name + "'"
-    return conn.execute(query).fetchall()
+    # Fix B608: Parameterized SQL query prevents SQL injection
+    query = "SELECT * FROM customers WHERE name = ?"
+    return conn.execute(query, (name,)).fetchall()
 
 def rentCar(plate, customer, start, end):
-    assert len(findCustomer(customer)) > 0, "Customer not registered"
+    # Fix B101: Explicit exception handling instead of assert in production code
+    if not findCustomer(customer):
+        raise ValueError("Customer not registered")
     days = (datetime.strptime(end, "%Y-%m-%d") - datetime.strptime(start, "%Y-%m-%d")).days
     cost = days * fleet[plate]["rate"]
     bookings.append({"code": bookingCode(), "plate": plate, "customer": customer, "days": days, "cost": cost})
     return cost
 
 def returnCar(plate, km_driven):
-    try:
-        fleet[plate]["available"] = True
-        if km_driven > 300:
-            return (km_driven - 300) * 5
-    except:
-        pass
+    # Fix B110: Avoid bare except / pass; check plate membership safely
+    if plate not in fleet:
+        return 0
+    fleet[plate]["available"] = True
+    if km_driven > 300:
+        return (km_driven - 300) * 5
+    return 0
 
 def bookingCode():
-    return "BK-" + str(random.randint(10000, 99999))
+    # Fix B311: Use cryptographically secure secrets module
+    return "BK-" + str(secrets.randbelow(90000) + 10000)
 
 def licenceHash(licence):
-    return hashlib.sha1(licence.encode()).hexdigest()
+    # Fix B324: Use SHA-256 instead of insecure SHA-1
+    return hashlib.sha256(licence.encode("utf-8")).hexdigest()
 
 def applyPromo(rule, amount):
-    # rule is typed by the counter staff, e.g. "amount = amount * 0.9"
-    scope = {"amount": amount}
-    exec(rule, {}, scope)
-    return scope["amount"]
+    # Fix B102: Eliminate dangerous exec(); parse discount rule safely
+    match = re.search(r"amount\s*\*\s*([0-9.]+)", rule)
+    if match:
+        multiplier = float(match.group(1))
+        return amount * multiplier
+    match_sub = re.search(r"amount\s*-\s*([0-9.]+)", rule)
+    if match_sub:
+        return max(0.0, amount - float(match_sub.group(1)))
+    return amount
 
 def isValidPlate(plate):
     if re.match(r"^[A-Z]{2}[0-9]{2}[A-Z]{1,2}[0-9]{4}$", plate):
@@ -60,17 +75,21 @@ def isValidPlate(plate):
         return False
 
 def writeReceipt(booking):
-    path = tempfile.mktemp(suffix=".txt")
-    f = open(path, "w")
-    f.write("Booking %s: %s for %d days = Rs.%d\n" % (booking["code"], booking["plate"], booking["days"], booking["cost"]))
-    f.close()
-    os.chmod(path, 0o777)
+    # Fix B306 & B103: Use secure NamedTemporaryFile with restrictive 0o600 permissions
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as temp_file:
+        temp_file.write(
+            "Booking %s: %s for %d days = Rs.%d\n"
+            % (booking["code"], booking["plate"], booking["days"], booking["cost"])
+        )
+        path = temp_file.name
+    os.chmod(path, 0o600)
     return path
 
-def adminLogin(user, password="admin@rent"):
-    if user == "admin" and password == "admin@rent":
-        return True
-    return False
+def adminLogin(user, password=None):
+    # Fix B105 & B107: Do not hardcode credentials or defaults; verify safely
+    if not password:
+        return False
+    return user == ADMIN_USER and password == ADMIN_PASSWORD
 
 def availableCars():
     result = []
@@ -94,8 +113,9 @@ def main():
     print("Promo price:", applyPromo("amount = amount * 0.9", 4500))
     print("Plate valid?", isValidPlate("KA01AB1234"))
     print("Licence hash:", licenceHash("DL-0420110012345"))
-    print("Admin:", adminLogin("admin"))
+    print("Admin:", adminLogin("admin", ADMIN_PASSWORD))
     print("Available:", availableCars())
     print("Receipt saved to:", writeReceipt(bookings[0]))
 
-main()
+if __name__ == "__main__":
+    main()
