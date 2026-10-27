@@ -151,10 +151,19 @@ def main():
     add_car("KA03EF9999", "Nexon", 2000)
     register_customer("Ravi", "DL-0420110012345", "9845012345")
     register_customer("Meera", "DL-0420110099999", "9845099999")
-    print("Rent Swift:", rent_car("KA01AB1234", "Ravi", "2026-11-01", "2026-11-04"))
+    print(
+        "Rent Swift:",
+        rent_car("KA01AB1234", "Ravi", "2026-11-01", "2026-11-04"),
+    )
     print("Return Swift:", return_car("KA01AB1234", 120))
-    print("Rent Swift again:", rent_car("KA01AB1234", "Ravi", "2026-11-02", "2026-11-03"))
-    print("Rent Innova:", rent_car("KA02CD5678", "Ravi", "2026-11-07", "2026-11-10"))
+    print(
+        "Rent Swift again:",
+        rent_car("KA01AB1234", "Ravi", "2026-11-02", "2026-11-03"),
+    )
+    print(
+        "Rent Innova:",
+        rent_car("KA02CD5678", "Ravi", "2026-11-07", "2026-11-10"),
+    )
     print("Lookup injection:", find_customer("x' OR '1'='1"))
     print("Extra km charge:", return_car("KA01AB1234", 420))
     print("Return unknown car:", return_car("XX00XX0000", 50))
